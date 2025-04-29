@@ -1,0 +1,433 @@
+import discord
+from discord.ext import commands, tasks
+import datetime
+import random
+import time
+import string
+
+
+# Ustawienia intencji
+intents = discord.Intents.default()
+intents.message_content = True
+
+bot = commands.Bot(command_prefix="-", intents=intents)
+
+# Funkcja do logowania do pliku
+def log_to_file(message):
+    with open("log.txt", "a", encoding="utf-8") as log_file:
+        log_file.write(f"{datetime.datetime.now()} - {message}\n")
+
+
+
+# Globalne zmienne
+last_generated_code = None
+last_generated_time = None
+
+# Funkcja do generowania 12-znakowego kodu
+def generate_secret_code():
+    return ''.join(random.choices(string.ascii_letters + string.digits, k=12))
+
+# Lista tekstów powitalnych (Decoy)
+decoy_messages = [
+    "Witaj {user.mention}, widzę, że lubisz poszukiwać tajnych komend!",
+    "Cześć {user.mention}, masz nosa do odkrywania sekretów!",
+    "Hej {user.mention}, świetna robota! Kolejna tajna komenda odkryta.",
+    "Witaj {user.mention}, jesteś mistrzem w znajdowaniu sekretów!"
+]
+
+# Komenda !qwerty
+@bot.command()
+async def qwerty(ctx):
+
+    await ctx.message.delete()
+
+    global last_generated_code, last_generated_time
+    
+    # Generowanie nowego kodu tylko raz co 5 minut
+    if last_generated_code is None or (time.time() - last_generated_time) > 300:  # 5 minut
+        last_generated_code = generate_secret_code()  # Generowanie kodu
+        last_generated_time = time.time()  # Czas generowania kodu
+        print(f"Dezorientacja aktywowana przez {ctx.author.name}. Kod: {last_generated_code}")  # Kod na konsoli
+        await ctx.send(random.choice(decoy_messages).format(user=ctx.author))  # Losowy tekst powitalny na Discordzie
+    else:
+        print(f"Próba ponownego wygenerowania kodu przez {ctx.author.name}. Kod już wygenerowany. Czekaj chwilę przed kolejną próbą.")  # Wiadomość na konsoli
+        await print(f"Kod już został wygenerowany. Poczekaj chwilę przed kolejną próbą.")  # Informacja na Discordzie
+
+# Komenda ![sekretny kod] @user
+@bot.command()
+async def SoFTlOckeT5832(ctx, secret_code: str, user: discord.Member):
+    
+    await ctx.message.delete()
+    
+    global last_generated_code
+    
+    if secret_code == last_generated_code:
+        # Tutaj można dodać przypisanie roli
+        role = discord.utils.get(ctx.guild.roles, name="CO-OWNER")  # Zastąp nazwą roli, którą chcesz przypisać
+        if role:
+            await user.add_roles(role)
+            print(f"Rola została przypisana do {user.name} przez {ctx.author.name}.")  # Wiadomość na konsoli
+        else:
+            await print(f"Nie znaleziono roli.")
+    else:
+        await print(f"Niepoprawny kod! Spróbuj ponownie.")
+
+# Hierarchia ról administracyjnych (od najniższej do najwyższej)
+admin_role_hierarchy = [
+    'MŁODSZY ADMIN',
+    'ADMIN',
+    'HEAD ADMIN',
+    'CO-OWNER',
+    'OWNER'
+]
+
+def get_highest_admin_role(member):
+    """Zwraca najwyższą rolę administracyjną użytkownika."""
+    for role_name in reversed(admin_role_hierarchy):  # Od najwyższej do najniższej
+        role = discord.utils.get(member.roles, name=role_name)
+        if role:
+            return role.name
+    return None
+
+def get_next_admin_rank(current_rank):
+    try:
+        index = admin_role_hierarchy.index(current_rank)
+        if index + 1 < len(admin_role_hierarchy):
+            return admin_role_hierarchy[index + 1]
+    except ValueError:
+        return None
+    return None
+
+def get_previous_admin_rank(current_rank):
+    try:
+        index = admin_role_hierarchy.index(current_rank)
+        if index - 1 >= 0:
+            return admin_role_hierarchy[index - 1]
+    except ValueError:
+        return None
+    return None
+
+# Komenda adminpromote
+@bot.command()
+async def adminpromote(ctx, member: discord.Member):
+    author_highest_role = get_highest_admin_role(ctx.author)
+    if not author_highest_role:
+        await ctx.send("❌ Nie masz wystarczających uprawnień.")
+        return
+
+    member_highest_role = get_highest_admin_role(member)
+    if not member_highest_role:
+        current_role = 'MŁODSZY ADMIN'
+    else:
+        current_role = member_highest_role
+
+    next_role = get_next_admin_rank(current_role)
+    if not next_role:
+        await ctx.send(f"⚠️ {member.mention} ma już najwyższą możliwą rangę administracyjną.")
+        return
+
+    # POPRAWNA KONTROLA DOSTĘPU:
+    if admin_role_hierarchy.index(author_highest_role) <= admin_role_hierarchy.index(next_role):
+        await ctx.send(f"❌ Nie możesz awansować użytkownika do roli **{next_role}**, ponieważ jest ona taka sama lub wyższa od twojej.")
+        return
+
+    role_current = discord.utils.get(ctx.guild.roles, name=current_role)
+    role_next = discord.utils.get(ctx.guild.roles, name=next_role)
+
+    if role_next:
+        if role_current:
+            await member.remove_roles(role_current)
+        await member.add_roles(role_next)
+        await ctx.send(f"✅ Awansowano {member.mention} na **{next_role}**.")
+    else:
+        await ctx.send("❌ Wystąpił błąd przy zmianie roli.")
+
+# Komenda admindemote
+@bot.command()
+async def admindemote(ctx, member: discord.Member):
+    author_highest_role = get_highest_admin_role(ctx.author)
+    if not author_highest_role:
+        await ctx.send("❌ Nie masz wystarczających uprawnień.")
+        return
+
+    member_highest_role = get_highest_admin_role(member)
+    if not member_highest_role:
+        await ctx.send(f"⚠️ {member.mention} nie posiada żadnej rangi administracyjnej.")
+        return
+
+    previous_role = get_previous_admin_rank(member_highest_role)
+    if not previous_role:
+        await ctx.send(f"⚠️ {member.mention} już jest na najniższej randze administracyjnej.")
+        return
+
+    # POPRAWNA KONTROLA DOSTĘPU:
+    if admin_role_hierarchy.index(author_highest_role) <= admin_role_hierarchy.index(member_highest_role):
+        await ctx.send(f"❌ Nie możesz degradować użytkownika z roli **{member_highest_role}**, ponieważ jest ona taka sama lub wyższa od twojej.")
+        return
+
+    role_current = discord.utils.get(ctx.guild.roles, name=member_highest_role)
+    role_previous = discord.utils.get(ctx.guild.roles, name=previous_role)
+
+    if role_current and role_previous:
+        await member.remove_roles(role_current)
+        await member.add_roles(role_previous)
+        await ctx.send(f"✅ Zdegradowano {member.mention} na **{previous_role}**.")
+    else:
+        await ctx.send("❌ Wystąpił błąd przy zmianie roli.")
+
+
+greeks = {
+    "a": "α",
+    "b": "β",
+    "e": "ε",
+    "n": "ν",
+}
+
+# Hierarchia jednostek - od najwyższej do najniższej
+unit_hierarchy = {
+    "a": 1,  # A-1
+    "b": 2,  # B-7
+    "rrt": 3,  # RRT
+    "e": 4,  # E-11
+    "n": 5  # Nu-7
+}
+
+# Mapowanie skrótów na pełne nazwy jednostek
+unit_fullnames = {
+    "b": "B-7",
+    "a": "A-1",
+    "e": "E-11",
+    "n": "Nu-7",
+    "rrt": "RRT"
+}
+
+# Hierarchia ról w każdej jednostce
+role_hierarchy = {
+    "b": ["B-7 - Private", "B-7 - Recruit", "B-7 - Recruit First Class", "B-7 - Operative", "B-7 - Senior Operative", "B-7 - Specialist", "B-7 - Sergeant", "B-7 - Sergeant Major", "B-7 - Captain", "B-7 - Head Captain"],
+    "a": ["A-1 - Private", "A-1 - Recruit", "A-1 - Recruit First Class", "A-1 - Operative", "A-1 - Senior Operative", "A-1 - Specialist", "A-1 - Sergeant", "A-1 - Sergeant Major", "A-1 - Captain", "A-1 - Head Captain"],
+    "e": ["E-11 - Private", "E-11 - Recruit", "E-11 - Recruit First Class", "E-11 - Operative", "E-11 - Senior Operative", "E-11 - Specialist", "E-11 - Sergeant", "E-11 - Sergeant Major", "E-11 - Captain", "E-11 - Head Captain"],
+    "n": ["Nu-7 - Private", "Nu-7 - Recruit", "Nu-7 - Recruit First Class", "Nu-7 - Operative", "Nu-7 - Senior Operative", "Nu-7 - Specialist", "Nu-7 - Sergeant", "Nu-7 - Sergeant Major", "Nu-7 - Captain", "Nu-7 - Head Captain"],
+    "rrt": ["RRT - Private", "RRT - Recruit", "RRT - Recruit First Class", "RRT - Operative", "RRT - Senior Operative", "RRT - Specialist", "RRT - Sergeant", "RRT - Sergeant Major", "RRT - Captain", "RRT - Head Captain"]
+}
+
+# Komenda -getroles / alias -r
+@bot.command(aliases=['r'])
+async def getroles(ctx, user: discord.Member):
+    log_to_file(f"[GETROLES] Komenda użyta na kanale: {ctx.channel} przez {ctx.author}")
+
+    # Lista wszystkich ról z role_hierarchy
+    allowed_roles = []
+    for ranks in role_hierarchy.values():
+        allowed_roles.extend(ranks)
+
+    # Filtrujemy role użytkownika, które są w allowed_roles
+    user_roles = [role.name for role in user.roles if role.name in allowed_roles]
+
+    if not user_roles:
+        await ctx.send(f"⚠️ {user.mention} nie ma żadnych rang jednostek.")
+    else:
+        embed = discord.Embed(
+            title=f"Role jednostek użytkownika {user.name}",
+            description="\n".join(f"- {r}" for r in user_roles),
+            color=discord.Color.blue()
+        )
+        embed.set_footer(text=f"Komenda użyta na kanale: {ctx.channel}")
+        await ctx.send(embed=embed)
+
+# Funkcje pomocnicze do awansów i degradacji
+def get_next_rank(unit, current_rank):
+    try:
+        unit_roles = role_hierarchy[unit]
+        current_index = unit_roles.index(current_rank.strip())
+        if current_index + 1 < len(unit_roles):
+            return unit_roles[current_index + 1]
+    except ValueError:
+        print(f"Nie znaleziono '{current_rank}' w {unit_roles}")
+        return None
+    return None
+
+def get_previous_rank(unit, current_rank):
+    try:
+        unit_roles = role_hierarchy[unit]
+        current_index = unit_roles.index(current_rank.strip())
+        if current_index - 1 >= 0:
+            return unit_roles[current_index - 1]
+    except ValueError:
+        print(f"Nie znaleziono '{current_rank}' w {unit_roles}")
+        return None
+    return None
+
+def has_promotion_permission(member, unit):
+    allowed_ranks = ["Head Captain", "Captain", "Sergeant Major", "Sergeant"]
+
+    unit_fullname = unit_fullnames[unit.lower()]
+
+    for role in member.roles:
+        if unit_fullname in role.name:
+            for rank in allowed_ranks:
+                if role.name.startswith(f"{unit_fullname} - {rank}"):
+                    return True
+    return False
+
+def get_unit_key_from_prefix(prefix):
+    for key, greek in greeks.items():
+        if greek == prefix:
+            return key
+    if prefix == "RRT":
+        return "rrt"
+    return prefix  # fallback
+
+def add_unit_prefix_to_nick(user, unit_fullname):
+    current_nick = user.nick if user.nick else user.name
+
+    # Pobranie aktualnych jednostek z nicku
+    parts = current_nick.split(" ")
+    prefixes = []
+    other_parts = []
+
+    for part in parts:
+        # Jeżeli wygląda na prefix, to dodajemy go do listy prefixes
+        if part.startswith(tuple(greeks.values())) or part.startswith(tuple(unit_fullnames.values())):
+            prefixes.append(part)
+        else:
+            other_parts.append(part)
+
+    # Dodajemy nowy prefix (jeśli nie ma go jeszcze)
+    if unit_fullname not in prefixes:
+        prefixes.append(unit_fullname)
+
+    # Sortujemy przedrostki według hierarchii
+    prefixes_sorted = sorted(prefixes, key=lambda x: unit_hierarchy.get(get_unit_key(x), 999))
+
+    # Nowy nick
+    new_nick = " ".join(prefixes_sorted + other_parts)
+    return new_nick
+
+
+def get_unit_key(unit_fullname):
+    # Zamienia pełną nazwę lub grecką literę na klucz w hierarchii
+    for key, name in unit_fullnames.items():
+        if unit_fullname.startswith(name):
+            return key
+    for key, greek in greeks.items():
+        if unit_fullname.startswith(greek):
+            return key
+    return None
+    
+def remove_unit_prefix_from_nick(user, unit_prefix):
+    current_nick = user.nick if user.nick else user.name
+    parts = current_nick.split()
+
+    # Usuń prefix
+    parts = [p for p in parts if p != unit_prefix]
+
+    return " ".join(parts).strip()    
+
+# Komenda -promote / alias -pm
+@bot.command(aliases=['pm'])
+async def promote(ctx, user: discord.Member, unit: str):
+    # Zamiana jednostki na małe litery
+    unit = unit.lower()
+
+    # Sprawdzanie, czy jednostka istnieje
+    if unit not in unit_fullnames:
+        await ctx.send("❌ Nieprawidłowa jednostka.")
+        return
+
+    # Sprawdzanie uprawnień autora komendy
+    if not has_promotion_permission(ctx.author, unit):
+        await ctx.send("❌ Nie masz uprawnień, aby awansować w tej jednostce!")
+        return
+
+    unit_fullname = unit_fullnames[unit]
+
+    # Sprawdzanie czy użytkownik ma już rolę w tej jednostce
+    current_role = None
+    for role in user.roles:
+        if role.name.startswith(unit_fullname):
+            current_role = role.name
+            break
+
+    if not current_role:
+        # Użytkownik nie ma żadnej roli -> Dodajemy "Recruit"
+        role_to_add = discord.utils.get(ctx.guild.roles, name=f"{unit_fullname} - Private")
+        if role_to_add:
+            await user.add_roles(role_to_add)
+            await user.edit(nick=add_unit_prefix_to_nick(user, unit_fullname))
+            await ctx.send(f"✅ {user.mention} został dodany do jednostki {unit_fullname} jako **Private**.")
+        else:
+            await ctx.send(f"❌ Nie znaleziono roli {unit_fullname} - Private.")
+        return
+
+    # Ma już rolę, próbujemy awansować
+    next_rank = get_next_rank(unit, current_role)
+    if not next_rank:
+        await ctx.send(f"⚠️ {user.mention} ma już najwyższą rangę w {unit_fullname}.")
+        return
+
+    role_current = discord.utils.get(ctx.guild.roles, name=current_role)
+    role_next = discord.utils.get(ctx.guild.roles, name=next_rank)
+
+    if role_current and role_next:
+        await user.remove_roles(role_current)
+        await user.add_roles(role_next)
+        await ctx.send(f"✅ Awansowano {user.mention} na **{role_next.name}**.")
+    else:
+        await ctx.send("❌ Wystąpił błąd przy zmianie ról.")
+
+
+# Komenda -demote / alias -dm
+@bot.command(aliases=['dm'])
+async def demote(ctx, user: discord.Member, unit: str):
+    # Zamiana jednostki na małe litery
+    unit = unit.lower()
+
+    # Sprawdzanie, czy jednostka istnieje
+    if unit not in unit_fullnames:
+        await ctx.send("❌ Nieprawidłowa jednostka.")
+        return
+
+    # Sprawdzanie uprawnień autora komendy
+    if not has_promotion_permission(ctx.author, unit):
+        await ctx.send("❌ Nie masz uprawnień, aby degradować w tej jednostce!")
+        return
+
+    unit_fullname = unit_fullnames[unit]
+
+    # Szukanie obecnej roli użytkownika
+    current_role = None
+    for role in user.roles:
+        if role.name.startswith(unit_fullname):
+            current_role = role.name
+            break
+
+    if not current_role:
+        await ctx.send(f"⚠️ {user.mention} nie ma przypisanej rangi w {unit_fullname}.")
+        return
+
+    if current_role == f"{unit_fullname} - Private":
+        # Jeśli jest już na najniższej randze -> Usuwamy rolę i prefix
+        role_to_remove = discord.utils.get(ctx.guild.roles, name=current_role)
+        if role_to_remove:
+            await user.remove_roles(role_to_remove)
+            await user.edit(nick=remove_unit_prefix_from_nick(user, unit_fullname))
+            await ctx.send(f"⚠️ {user.mention} był na najniższej randze. Usunięto go z jednostki {unit_fullname}.")
+        return
+
+    previous_rank = get_previous_rank(unit, current_role)
+    if not previous_rank:
+        await ctx.send(f"⚠️ {user.mention} już jest na najniższej randze.")
+        return
+
+    role_current = discord.utils.get(ctx.guild.roles, name=current_role)
+    role_previous = discord.utils.get(ctx.guild.roles, name=previous_rank)
+
+    if role_current and role_previous:
+        await user.remove_roles(role_current)
+        await user.add_roles(role_previous)
+        await ctx.send(f"✅ Zdegradowano {user.mention} na **{role_previous.name}**.")
+    else:
+        await ctx.send("❌ Wystąpił błąd przy zmianie ról.")
+
+# Uruchomienie bota
+bot.run('token')
